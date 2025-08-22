@@ -1,39 +1,8 @@
-# ECC100 MQTT Streaming Control System
-
-A high-performance, real-time MQTT-based control system for ECC100 piezo controllers with comprehensive error monitoring and emergency protection features.
-
-## Overview
-
-This system provides MQTT-based real-time control and monitoring of ECC100 piezo controllers, designed specifically for precision microscopy stage control. It features:
-
-- **High-speed position streaming** at up to 10kHz via MQTT
-- **Real-time command processing** with microsecond timestamps
-- **Comprehensive error monitoring** with automatic emergency stops
-- **Multi-axis support** (X, Y, Z linear + R rotational)
-- **Thread-safe operation** with concurrent position monitoring and command execution
-- **MQTT integration** for distributed control and monitoring
-- **Controller ID-based mapping** for reliable axis identification regardless of USB connection order
-
-## Hardware Requirements
-
-- **ECC100 piezo controller(s)** (up to 2 controllers supported)
-- **Connected actuators**: Linear stages for X/Y/Z, rotational stage for R
-- **Linux computer** with USB/Ethernet connection to controllers
-- **MQTT broker** (local or remote)
-
-### Controller Configuration
+## Controller Configuration
 
 The system expects specific controller IDs:
 - **Controller ID=4**: XYZ linear stages (Y=axis0, X=axis1, Z=axis2)
 - **Controller ID=2222**: R rotational stage (R=axis0)
-
-## Software Requirements
-
-- **Linux OS** (tested on Ubuntu/Debian)
-- **GCC compiler** with C++11 support
-- **ECC100 SDK** with `libecc.so` and `ecc.h`
-- **libmosquitto** MQTT client library
-- **MQTT broker** (Mosquitto recommended)
 
 ## Installation
 
@@ -61,18 +30,146 @@ Ensure you have the following files in your project directory:
 ```
 ├── ecc.h                      # ECC100 header file
 ├── libecc.so                 # ECC100 shared library  
-├── ecc_mqtt_streaming.cpp    # Main source file
+├── ecc_mqtt_streaming.cpp    # Code for broadcasting data and listening commands
+├── ecc_tool.cpp              # Code for manual moving and testing
 └── README.md                 # This file
 ```
 
 ### 3. Compile
+```bash
+g++ -std=c++11 -Wall -Wextra -O2 -D__unix__ -Dunix -Wl,-rpath,. -o ecc_tool ecc_tool.cpp -lecc -L. -I.
+```
 
 ```bash
 g++ -std=c++11 -Wall -Wextra -O2 -D__unix__ -Dunix -Wl,-rpath,. -pthread -o ecc_mqtt_streaming ecc_mqtt_streaming.cpp -lecc -lmosquitto -L. -I.
 ```
+**Note**: Ensure `libecc.so` is in the same directory or in your library path.
 
 ## Configuration
 
+### ecc_tool - Direct Controller Interface
+
+Single-operation command-line tool for immediate controller operations.
+
+### Features
+- List and inspect all connected controllers
+- Precise positioning with progress monitoring
+- Manual and automatic calibration
+- Single-step and continuous movement
+- Parameter configuration and saving
+- Real-time position monitoring
+- Movement stopping functionality
+
+### Basic Syntax
+```bash
+./ecc_tool <command> [arguments...]
+```
+
+### Commands
+
+#### 1. List Controllers and Status
+```bash
+./ecc_tool list
+```
+**Output Example:**
+```
+Controller 0 (ID=4, Handle=1)
+Firmware Version: 538313767
+  Axis 0: 999730 nm [Linear] (ECS3030) [REF]
+    Amplitude: 45000 mV
+    Frequency: 1000000 mHz
+    Target range: 1000 nm/µ°
+    Reference valid: Yes
+    Reference position: 0
+    EOT Forward: Clear
+    EOT Backward: Clear
+```
+
+#### 2. Move to Position
+```bash
+./ecc_tool move <controller_index> <axis> <target_position>
+```
+**Examples:**
+```bash
+./ecc_tool move 0 1 5000        # Move controller 0, axis 1 to 5000 nm
+./ecc_tool move 1 0 -1200000    # Move controller 1, axis 0 to -1200000 µ°
+```
+
+#### 3. Calibrate Axis
+```bash
+./ecc_tool calibrate <controller_index> <axis>
+```
+**Example:**
+```bash
+./ecc_tool calibrate 1 0        # Reset position and establish reference
+```
+
+#### 4. Continuous Movement
+```bash
+./ecc_tool continuous <controller_index> <axis> <direction> [duration_ms]
+```
+**Examples:**
+```bash
+./ecc_tool continuous 0 1 forward 2000    # Move forward for 2 seconds
+./ecc_tool continuous 1 0 backward 1000   # Move backward for 1 second
+```
+
+#### 5. Single Step Movement
+```bash
+./ecc_tool step <controller_index> <axis> <direction> [num_steps]
+```
+**Examples:**
+```bash
+./ecc_tool step 0 1 forward 5     # 5 steps forward
+./ecc_tool step 1 0 backward 10   # 10 steps backward
+```
+
+#### 6. Monitor Position
+```bash
+./ecc_tool monitor <controller_index> <axis> [duration_seconds]
+```
+**Example:**
+```bash
+./ecc_tool monitor 1 0 30         # Monitor axis for 30 seconds
+```
+
+#### 7. Configure Parameters
+```bash
+./ecc_tool config <controller_index> <axis> [amplitude_mV] [frequency_mHz]
+```
+**Examples:**
+```bash
+./ecc_tool config 0 1 30000 1000000    # Set amplitude and frequency
+./ecc_tool config 0 1 45000            # Set amplitude only
+```
+
+#### 8. Stop Movement
+```bash
+./ecc_tool stop <controller_index> <axis>
+```
+**Example:**
+```bash
+./ecc_tool stop 1 0               # Stop closed-loop control
+```
+
+#### 9. Save Configuration
+```bash
+./ecc_tool save <controller_index>
+```
+**Example:**
+```bash
+./ecc_tool save 0                 # Save settings to flash memory
+```
+
+### Important Notes
+- **Units**: Linear actuators use nanometers (nm), goniometers/rotators use micro-degrees (µ°)
+- **Target Range**: Automatically calculated as 10% of movement distance (minimum 1000 units)
+- **Moving Status**: `[MOVING]` indicates active closed-loop positioning control
+- **Reference**: `[REF]` indicates valid position reference established
+
+---
+
+## ecc_mqtt_streaming
 ### System Parameters
 
 Edit the following constants in `ecc_mqtt_streaming.cpp`:
@@ -98,8 +195,6 @@ const std::string MQTT_TOPIC_STATUS = "microscope/stage/status";      // System 
 
 - **XYZ Controller (ID=4)**: Y (Physical Axis 0), X (Physical Axis 1), Z (Physical Axis 2)
 - **R Controller (ID=2222)**: R (Physical Axis 0)
-
-## Usage
 
 ### Starting the System
 
@@ -245,7 +340,7 @@ mosquitto_sub -h localhost -t "microscope/stage/status"
 - `SYSTEM_READY` - System initialized and ready
 - `SYSTEM_SHUTDOWN` - System shutting down
 
-## Architecture
+### Architecture
 
 ### Multi-Threaded Design
 
@@ -298,24 +393,6 @@ All errors are:
 - Stored in internal error tracking system
 - Timestamped with picosecond precision
 
-## Performance Specifications
-
-### Timing Performance
-- **Position Sampling**: Up to 10,000 Hz (0.1ms intervals)
-- **Command Response**: < 1ms typical
-- **Error Monitoring**: 20 Hz (50ms intervals)
-- **Timestamp Precision**: Picoseconds (1e-12 seconds)
-
-### Data Throughput
-- **Position Stream**: ~2KB/second at 10kHz
-- **MQTT Overhead**: Minimal with QoS 0 for positions, QoS 1 for commands
-- **Network Usage**: ~5KB/second typical
-
-### System Resources
-- **CPU Usage**: ~10-20% on modern systems at 10kHz
-- **Memory**: < 50MB typical
-- **Network**: Low bandwidth requirements
-
 ### Performance Verification
 
 Check actual performance using the STATUS command:
@@ -329,7 +406,7 @@ Look for these metrics in the response:
 - **Total Samples**: Number of position samples taken
 - **Missed Deadlines**: Count of timing violations (should be < 0.1%)
 
-## Troubleshooting
+### Troubleshooting
 
 ### Common Issues
 
@@ -437,188 +514,6 @@ mosquitto_sub -h localhost -t "microscope/stage/+" -v
 # Monitor only errors
 mosquitto_sub -h localhost -t "microscope/stage/result" | grep ERROR
 ```
-
-## Integration Examples
-
-### Python Integration
-
-```python
-import paho.mqtt.client as mqtt
-import time
-import json
-
-class StageController:
-    def __init__(self, broker_host="localhost", broker_port=1883):
-        self.client = mqtt.Client()
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.client.connect(broker_host, broker_port, 60)
-        self.client.loop_start()
-        
-        self.current_position = {"X": None, "Y": None, "Z": None, "R": None}
-        
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"Connected to MQTT broker with result code {rc}")
-        client.subscribe("microscope/stage/position")
-        client.subscribe("microscope/stage/result")
-        
-    def on_message(self, client, userdata, msg):
-        topic = msg.topic
-        payload = msg.payload.decode()
-        
-        if topic == "microscope/stage/position":
-            # Parse: timestamp/X/Y/Z/R
-            parts = payload.split("/")
-            if len(parts) == 5:
-                self.current_position["X"] = int(parts[1]) if parts[1] != "NaN" else None
-                self.current_position["Y"] = int(parts[2]) if parts[2] != "NaN" else None
-                self.current_position["Z"] = int(parts[3]) if parts[3] != "NaN" else None
-                self.current_position["R"] = int(parts[4]) if parts[4] != "NaN" else None
-                
-        elif topic == "microscope/stage/result":
-            print(f"Result: {payload}")
-    
-    def move_axis(self, axis, position):
-        """Move specified axis to position"""
-        command = f"MOVE/{axis}/{position}"
-        self.client.publish("microscope/stage/command", command)
-        print(f"Sent command: {command}")
-    
-    def stop_axis(self, axis):
-        """Stop specified axis (disable closed-loop control)"""
-        command = f"STOP/{axis}"
-        self.client.publish("microscope/stage/command", command)
-        print(f"Sent command: {command}")
-    
-    def get_system_status(self):
-        """Request detailed system status report"""
-        command = "STATUS"
-        self.client.publish("microscope/stage/command", command)
-        print(f"Sent command: {command}")
-        print("Check result topic for detailed status report")
-    
-    def get_position(self, axis):
-        """Get current position of specified axis"""
-        return self.current_position.get(axis)
-
-# Usage example
-stage = StageController()
-time.sleep(1)  # Wait for connection
-
-# Move X axis to 5000 nm
-stage.move_axis("X", 5000)
-
-# Wait and check position
-time.sleep(2)
-print(f"Current X position: {stage.get_position('X')} nm")
-
-# Stop X axis
-stage.stop_axis("X")
-
-# Get detailed system status
-stage.get_system_status()
-```
-
-### MATLAB Integration
-
-```matlab
-% MATLAB MQTT Stage Control Example
-function stage_controller()
-    % Create MQTT client
-    broker = "localhost";
-    port = 1883;
-    client = mqttclient(broker, Port=port);
-    
-    % Subscribe to position topic
-    subscribe(client, "microscope/stage/position", @positionCallback);
-    subscribe(client, "microscope/stage/result", @resultCallback);
-    
-    % Move X axis to 1000 nm
-    moveAxis(client, "X", 1000);
-    
-    % Wait for movement
-    pause(3);
-    
-    % Stop X axis
-    stopAxis(client, "X");
-    
-    % Get system status
-    getSystemStatus(client);
-    
-    % Keep running for a while
-    pause(10);
-end
-
-function moveAxis(client, axis, position)
-    command = sprintf("MOVE/%s/%d", axis, position);
-    write(client, "microscope/stage/command", command);
-    fprintf("Sent command: %s\n", command);
-end
-
-function stopAxis(client, axis)
-    command = sprintf("STOP/%s", axis);
-    write(client, "microscope/stage/command", command);
-    fprintf("Sent stop command: %s\n", command);
-end
-
-function getSystemStatus(client)
-    command = "STATUS";
-    write(client, "microscope/stage/command", command);
-    fprintf("Sent status command: %s\n", command);
-    fprintf("Check result topic for detailed status report\n");
-end
-
-function positionCallback(topic, message)
-    % Parse position data: timestamp/X/Y/Z/R
-    data = split(message, "/");
-    if length(data) == 5
-        fprintf("Position - X:%s Y:%s Z:%s R:%s\n", ...
-                data{2}, data{3}, data{4}, data{5});
-    end
-end
-
-function resultCallback(topic, message)
-    fprintf("Result: %s\n", message);
-end
-```
-
-## Advanced Configuration
-
-### High-Speed Operation
-
-For applications requiring higher sampling rates:
-
-```cpp
-// Increase sampling rate (tested up to 10kHz)
-const int SAMPLE_RATE_HZ = 10000;  // 10kHz sampling
-
-// For even higher rates, consider system optimization:
-// - Real-time kernel (PREEMPT_RT)
-// - CPU isolation
-// - Process priority adjustment
-```
-
-### Remote MQTT Broker
-
-```cpp
-// Connect to remote broker
-const std::string MQTT_BROKER = "192.168.1.100";  // Remote broker IP
-const int MQTT_PORT = 1883;
-
-// For secure connections (requires additional setup)
-const int MQTT_PORT = 8883;  // TLS/SSL port
-```
-
-### Custom Topic Structure
-
-```cpp
-// Customize MQTT topics for your application
-const std::string MQTT_TOPIC_POSITION = "lab/microscope1/stage/position";
-const std::string MQTT_TOPIC_COMMAND = "lab/microscope1/stage/command";
-const std::string MQTT_TOPIC_RESULT = "lab/microscope1/stage/result";
-const std::string MQTT_TOPIC_STATUS = "lab/microscope1/stage/status";
-```
-
 ## Safety Guidelines
 
 ### Operational Safety
@@ -700,48 +595,3 @@ sudo ss -tuln    # Network connections
 mosquitto_sub -h localhost -t '$SYS/broker/messages/received/1min'
 mosquitto_sub -h localhost -t '$SYS/broker/messages/sent/1min'
 ```
-
-## Known Limitations
-
-1. **Maximum 2 controllers** - hardcoded limit in current implementation
-2. **Sequential command execution** - commands processed one at a time
-3. **No position history** - only current positions maintained
-4. **No configuration persistence** - settings not saved to file
-5. **Linux only** - Windows port would require significant changes
-6. **No built-in safety limits** - relies on hardware EOT detection
-7. **No velocity control** - position-only control mode
-8. **Controller ID dependency** - requires specific controller IDs (4 and 2222)
-
-## Future Enhancements
-
-Planned improvements for future versions:
-- **Configurable controller IDs** via configuration file
-- **Web interface** for browser-based control
-- **Position history logging** with SQLite database
-- **Multi-axis coordinated movements** 
-- **Safety limit enforcement** in software
-- **Windows compatibility** layer
-- **REST API** in addition to MQTT
-- **Real-time plotting** capabilities
-- **Auto-recovery mechanisms** for connection failures
-- **Dynamic controller discovery** without hardcoded IDs
-
----
-
-## License and Disclaimer
-
-This software is provided as-is for research and educational purposes. Users are responsible for:
-- Ensuring safe operation of their hardware
-- Compliance with local safety regulations  
-- Proper calibration and testing procedures
-- Data backup and recovery procedures
-- Verifying controller IDs match expected values
-
-Always test thoroughly in a safe environment before deploying for critical applications.
-
----
-
-**Version**: 2.0  
-**Last Updated**: January 2025  
-**Compatibility**: ECC100 controllers, Linux, libmosquitto 1.6+
-**Controller Requirements**: ID=4 (XYZ), ID=2222 (R)
